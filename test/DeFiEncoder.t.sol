@@ -10,7 +10,11 @@ import "../src/DeFiEncoder.sol";
  * @notice Comprehensive test targeting 100% coverage for DeFiEncoder
  */
 contract DeFiEncoderTest is Test {
+
     DeFiEncoder encoder;
+
+    uint256 private constant ADDRESS_SIZE = 20; // address: 20 bytes in encodePacked
+    uint256 private constant WORD_SIZE = 32; // uint256 / bytes32 : 32 bytes
 
     /**
      * @dev Deploy a fresh contract before each test
@@ -169,5 +173,78 @@ contract DeFiEncoderTest is Test {
         bytes32 id2 = encoder.encodeYieldPosition(user2, poolId, amount, startTime);
 
         assertNotEq(id1, id2);
+    }
+
+    function test_EncodeFlashLoan_EncodesFieldsInOrder() public {
+        address token = makeAddr("token");
+        uint256 amount = 1 ether;
+        bytes memory callbackData = hex"deadbeef";
+
+        bytes memory flashData = encoder.encodeFlashLoan(token, amount, callbackData);
+
+        bytes memory expected = abi.encodePacked(token, amount, callbackData, "FLASH_LOAN_V1");
+
+        assertEq(flashData, expected);
+        // token + amount + callbackData + len("FLASH_LOAN_V1")
+        assertEq(flashData.length, ADDRESS_SIZE + WORD_SIZE + callbackData.length + 13);
+    }
+
+    function test_EncodeFlashLoan_EmptyCallbackData() public {
+        address token = makeAddr("token");
+        uint256 amount = 1 ether;
+        bytes memory callbackData = "";
+
+        bytes memory flashData = encoder.encodeFlashLoan(token, amount, callbackData);
+
+        bytes memory expected = abi.encodePacked(token, amount, callbackData, "FLASH_LOAN_V1");
+
+        assertEq(flashData, expected);
+        // token + amount + callbackData + len("FLASH_LOAN_V1")
+        assertEq(flashData.length, ADDRESS_SIZE + WORD_SIZE + callbackData.length + 13);
+    }
+
+    function test_EncodeStakingPoolConfig_EncodesFieldsInOrder() public {
+        address token = makeAddr("token");
+        uint256 rewardRate = 10;
+        uint256 lockPeriod = 1_000_000;
+        uint256 maxStakers = 5;
+        uint256 timestamp = 1_700_000_000;
+
+        vm.warp(timestamp);
+        
+        bytes memory poolConfig = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
+
+        bytes memory expected = abi.encodePacked(token, rewardRate, lockPeriod, maxStakers, timestamp);
+
+        assertEq(poolConfig, expected);
+    }
+
+    function test_EncodeStakingPoolConfig_SameBlockSameOutput() public {
+        address token = makeAddr("token");
+        uint256 rewardRate = 10;
+        uint256 lockPeriod = 1_000_000;
+        uint256 maxStakers = 5;
+
+        vm.warp(1_700_000_000);
+        
+        bytes memory first = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
+        bytes memory second = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
+
+        assertEq(first, second);
+    }
+    
+    function test_EncodeStakingPoolConfig_DifferentTimestampDifferentOutput() public {
+        address token = makeAddr("token");
+        uint256 rewardRate = 10;
+        uint256 lockPeriod = 1_000_000;
+        uint256 maxStakers = 5;
+
+        vm.warp(block.timestamp + 100);
+        bytes memory first = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
+
+        vm.warp(block.timestamp + 100); 
+        bytes memory second = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
+
+        assertNotEq(first, second);
     }
 }
