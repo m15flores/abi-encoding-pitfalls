@@ -107,4 +107,67 @@ contract DeFiEncoderTest is Test {
         vm.expectRevert(DeFiEncoder.InvalidLength.selector);
         encoder.encodeSwapData(path, amounts, deadline);
     }
+
+    function test_EncodeLimitOrder_EncodesFieldsInOrder() public {
+        address maker = makeAddr("maker");
+        address taker = makeAddr("taker");
+        address tokenIn = makeAddr("tokenIn");
+        address tokenOut = makeAddr("tokenOut");
+        uint256 amountIn = 1 ether;
+        uint256 amountOut = 2 ether;
+        uint256 nonce = 7;
+
+        (bytes32 orderHash, bytes memory orderData) =
+            encoder.encodeLimitOrder(maker, taker, tokenIn, tokenOut, amountIn, amountOut, nonce);
+
+        bytes memory expected =
+            abi.encodePacked(maker, taker, tokenIn, tokenOut, amountIn, amountOut, nonce, "LIMIT_ORDER_V1");
+
+        assertEq(orderData, expected);
+        assertEq(orderData.length, expected.length);
+        assertEq(orderHash, keccak256(expected));
+    }
+
+    function test_EncodeLimitOrder_DifferentNonceDifferentHash() public {
+        address maker = makeAddr("maker");
+        address taker = makeAddr("taker");
+        address tokenIn = makeAddr("tokenIn");
+        address tokenOut = makeAddr("tokenOut");
+        uint256 amountIn = 1 ether;
+        uint256 amountOut = 2 ether;
+        uint256 nonce1 = 7;
+        uint256 nonce2 = 8;
+
+        (bytes32 orderHash1,) = encoder.encodeLimitOrder(maker, taker, tokenIn, tokenOut, amountIn, amountOut, nonce1);
+        (bytes32 orderHash2,) = encoder.encodeLimitOrder(maker, taker, tokenIn, tokenOut, amountIn, amountOut, nonce2);
+
+        assertNotEq(orderHash1, orderHash2);
+    }
+
+    function test_EncodeYieldPosition_ReturnsExpectedHash() public {
+        address user = makeAddr("user");
+        bytes32 poolId = keccak256("pool");
+        uint256 amount = 1 ether;
+        uint256 startTime = 1_700_000_000;
+
+        bytes32 positionId = encoder.encodeYieldPosition(user, poolId, amount, startTime);
+
+        bytes memory expected =
+            bytes.concat(bytes20(user), poolId, bytes32(amount), bytes32(startTime), bytes("YIELD_POSITION"));
+
+        assertEq(positionId, keccak256(expected));
+    }
+
+    function test_EncodeYieldPosition_DifferentUserDifferentId() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        bytes32 poolId = keccak256("pool");
+        uint256 amount = 1 ether;
+        uint256 startTime = 1_700_000_000;
+
+        bytes32 id1 = encoder.encodeYieldPosition(user1, poolId, amount, startTime);
+        bytes32 id2 = encoder.encodeYieldPosition(user2, poolId, amount, startTime);
+
+        assertNotEq(id1, id2);
+    }
 }
