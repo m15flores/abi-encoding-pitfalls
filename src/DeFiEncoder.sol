@@ -180,8 +180,9 @@ contract DeFiEncoder {
     }
 
     /**
-     * @dev Encodes data for a yield farming strategy
-     *      VULNERABLE BY DESIGN: kept on purpose to demosntrate an encodePacked collision
+     * @dev Encodes data for a yield farming strategy using abi.encodePacked
+     *      VULNERABLE BY DESIGN: kept on purpose to demonstrate an encodePacked collision
+     *      Use encodeYieldStrategyEncoded instead
      * @param strategyName Name of the strategy
      * @param pools Array of involved pools
      * @param weights Array of weights for each pool
@@ -212,6 +213,25 @@ contract DeFiEncoder {
         // Combine everything
         // forge-lint: disable-next-line(encode-packed-collision)
         strategyData = abi.encodePacked(nameData, poolsData, weightsData, "YIELD_STRATEGY_V1");
+    }
+
+    /**
+     * @dev Encodes data for a yield farming strategy using abi.encode
+     *      abi.encode stores the offset and length of each dynamic value, so different inputs cannot produce the same bytes.
+     *      The output is longer than with encodePacked because every value is padded to 32 bytes
+     * @param strategyName Name of the strategy
+     * @param pools Array of involved pools
+     * @param weights Array of weights for each pool
+     * @return strategyData Encoded strategy data
+     */
+    function encodeYieldStrategyEncoded(
+        string calldata strategyName,
+        address[] calldata pools,
+        uint256[] calldata weights
+    ) external pure returns (bytes memory strategyData) {
+        if (pools.length != weights.length) revert InvalidLength();
+
+        strategyData = abi.encode(strategyName, pools, weights);
     }
 
     /**

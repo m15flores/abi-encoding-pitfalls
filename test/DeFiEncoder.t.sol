@@ -48,7 +48,10 @@ contract DeFiEncoderTest is Test {
         assertTrue(idLow != idHigh, "Different fees must yield different ids.");
     }
 
-    function testFuzz_CreatePoolIdentifier_SameIdForBothTokenOrders(address tokenA, address tokenB, uint24 fee) public {
+    function testFuzz_CreatePoolIdentifier_SameIdForBothTokenOrders(address tokenA, address tokenB, uint24 fee)
+        public
+        view
+    {
         bytes32 idAB = encoder.createPoolIdentifier(tokenA, tokenB, fee);
         bytes32 idBA = encoder.createPoolIdentifier(tokenB, tokenA, fee);
 
@@ -60,7 +63,7 @@ contract DeFiEncoderTest is Test {
         address tokenB,
         uint24 fee1,
         uint24 fee2
-    ) public {
+    ) public view {
         vm.assume(fee1 != fee2);
 
         bytes32 id1 = encoder.createPoolIdentifier(tokenA, tokenB, fee1);
@@ -212,7 +215,7 @@ contract DeFiEncoderTest is Test {
         uint256 amountIn,
         uint256 amountOut,
         uint256 nonce
-    ) public {
+    ) public view {
         (bytes32 orderHash, bytes memory orderData) =
             encoder.encodeLimitOrder(maker, taker, tokenIn, tokenOut, amountIn, amountOut, nonce);
 
@@ -290,6 +293,21 @@ contract DeFiEncoderTest is Test {
         assertEq(flashData.length, ADDRESS_SIZE + WORD_SIZE + callbackData.length + 13);
     }
 
+    function testFuzz_EncodeFlashLoan_DifferentCallbackDifferentOutput(
+        bytes memory callbackDataA,
+        bytes memory callbackDataB
+    ) public {
+        vm.assume(keccak256(callbackDataA) != keccak256(callbackDataB));
+
+        address token = makeAddr("token");
+        uint256 amount = 1 ether;
+
+        bytes memory flashDataA = encoder.encodeFlashLoan(token, amount, callbackDataA);
+        bytes memory flashDataB = encoder.encodeFlashLoan(token, amount, callbackDataB);
+
+        assertNotEq(flashDataA, flashDataB);
+    }
+
     function test_EncodeStakingPoolConfig_EncodesFieldsInOrder() public {
         address token = makeAddr("token");
         uint256 rewardRate = 10;
@@ -329,7 +347,7 @@ contract DeFiEncoderTest is Test {
         vm.warp(block.timestamp + 100);
         bytes memory first = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
 
-        vm.warp(block.timestamp + 100);
+        skip(100);
         bytes memory second = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
 
         assertNotEq(first, second);
@@ -428,7 +446,7 @@ contract DeFiEncoderTest is Test {
         assertEq(strategyData, expected);
     }
 
-    function test_EncodeYieldStrategyPacked_NoPools() public {
+    function test_EncodeYieldStrategyPacked_NoPools() public view {
         string memory strategyName = "name";
         address[] memory pools = new address[](0);
         uint256[] memory weights = new uint256[](0);
@@ -482,7 +500,7 @@ contract DeFiEncoderTest is Test {
         string memory prefix,
         address pool,
         uint256 weight
-    ) public {
+    ) public view {
         string memory nameA = string(bytes.concat(bytes(prefix), bytes20(pool), bytes32(weight)));
         address[] memory poolsA = new address[](0);
         uint256[] memory weightsA = new uint256[](0);
@@ -500,6 +518,83 @@ contract DeFiEncoderTest is Test {
         assertNotEq(poolsA.length, poolsB.length);
         assertEq(dataA, dataB);
         assertEq(keccak256(dataA), keccak256(dataB));
+    }
+
+    function test_EncodeYieldStrategyEncoded_NoCollisionBetweenNameAndPool() public {
+        address pool = makeAddr("pool");
+        uint256 weight = 100;
+
+        // Same inputs that collide in encodeYieldStrategyPacked
+        string memory nameA = string(bytes.concat(bytes20(pool), bytes32(weight)));
+        address[] memory poolsA = new address[](0);
+        uint256[] memory weightsA = new uint256[](0);
+
+        string memory nameB = "";
+        address[] memory poolsB = new address[](1);
+        poolsB[0] = pool;
+        uint256[] memory weightsB = new uint256[](1);
+        weightsB[0] = weight;
+
+        bytes memory dataA = encoder.encodeYieldStrategyEncoded(nameA, poolsA, weightsA);
+        bytes memory dataB = encoder.encodeYieldStrategyEncoded(nameB, poolsB, weightsB);
+
+        // Unlike the packed version, different inputs give different bytes and hashes
+        assertNotEq(poolsA.length, poolsB.length);
+        assertNotEq(dataA, dataB);
+        assertNotEq(keccak256(dataA), keccak256(dataB));
+    }
+
+    function test_EncodeYieldStrategyEncoded_DecodesBackToInputs() public {
+        string memory name = "name";
+        address[] memory pools = new address[](2);
+        pools[0] = makeAddr("pool1");
+        pools[1] = makeAddr("pool2");
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 100;
+        weights[1] = 200;
+
+        bytes memory data = encoder.encodeYieldStrategyEncoded(name, pools, weights);
+        (string memory nameDecoded, address[] memory poolsDecoded, uint256[] memory weightsDecoded) =
+            abi.decode(data, (string, address[], uint256[]));
+
+        assertEq(name, nameDecoded);
+        assertEq(pools, poolsDecoded);
+        assertEq(weights, weightsDecoded);
+    }
+
+    function testFuzz_EncodeYieldStrategyEncoded_NoCollisionForAnyPoolAndWeight(
+        string memory prefix,
+        address pool,
+        uint256 weight
+    ) public view {
+        string memory nameA = string(bytes.concat(bytes(prefix), bytes20(pool), bytes32(weight)));
+        address[] memory poolsA = new address[](0);
+        uint256[] memory weightsA = new uint256[](0);
+
+        string memory nameB = prefix;
+        address[] memory poolsB = new address[](1);
+        poolsB[0] = pool;
+        uint256[] memory weightsB = new uint256[](1);
+        weightsB[0] = weight;
+
+        bytes memory dataA = encoder.encodeYieldStrategyEncoded(nameA, poolsA, weightsA);
+        bytes memory dataB = encoder.encodeYieldStrategyEncoded(nameB, poolsB, weightsB);
+
+        assertNotEq(poolsA.length, poolsB.length);
+        assertNotEq(dataA, dataB);
+        assertNotEq(keccak256(dataA), keccak256(dataB));
+    }
+
+    function test_EncodeYieldStrategyEncoded_RevertWhen_LengthMismatch() public {
+        string memory strategyName = "name";
+        address[] memory pools = new address[](2);
+        pools[0] = makeAddr("pool0");
+        pools[1] = makeAddr("pool1");
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 10;
+
+        vm.expectRevert(DeFiEncoder.InvalidLength.selector);
+        encoder.encodeYieldStrategyEncoded(strategyName, pools, weights);
     }
 
     function test_EncodeCrossChainBridgeData_EncodesFieldsInOrder() public {
@@ -540,6 +635,21 @@ contract DeFiEncoderTest is Test {
         bytes memory expected = abi.encodePacked(txType, user, timestamp, nonce, "DEFI_TX");
 
         assertEq(txId, keccak256(expected));
+    }
+
+    function testFuzz_CreateDeFiTransactionId_DifferentTxTypeDifferentId(
+        string memory txTypeA,
+        string memory txTypeB,
+        address user,
+        uint256 timestamp,
+        uint256 nonce
+    ) public view {
+        vm.assume(keccak256(bytes(txTypeA)) != keccak256(bytes(txTypeB)));
+
+        bytes32 txIdA = encoder.createDeFiTransactionId(txTypeA, user, timestamp, nonce);
+        bytes32 txIdB = encoder.createDeFiTransactionId(txTypeB, user, timestamp, nonce);
+
+        assertNotEq(txIdA, txIdB);
     }
 
     function test_EncodeStopLossOrder_EncodeFieldsInOrder() public {
