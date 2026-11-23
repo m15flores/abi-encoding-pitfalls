@@ -89,6 +89,23 @@ contract DeFiEncoderTest is Test {
         assertEq(positionId, keccak256(expected), "PositionId must be keccak of encodedData.");
     }
 
+    function test_EncodeTradingPosition_SameBlockSameParamsSameId() public {
+        address user = address(0x1234);
+        address tokenIn = address(0xA1);
+        address tokenOut = address(0xB2);
+        uint256 amountIn = 1 ether;
+        uint256 amountOut = 2 ether;
+
+        uint256 fixTimestamp = 1_700_000_000;
+        vm.warp(fixTimestamp);
+
+        (bytes32 positionId1,) = encoder.encodeTradingPosition(user, tokenIn, tokenOut, amountIn, amountOut);
+        (bytes32 positionId2,) = encoder.encodeTradingPosition(user, tokenIn, tokenOut, amountIn, amountOut);
+
+        // position Id is not unique: same params give the same id
+        assertEq(positionId1, positionId2);
+    }
+
     function test_EncodeSwapData_EncodesPathAmountsDeadline() public view {
         address[] memory path = new address[](3);
         path[0] = address(0x1);
@@ -436,6 +453,53 @@ contract DeFiEncoderTest is Test {
 
         vm.expectRevert(DeFiEncoder.InvalidLength.selector);
         encoder.encodeYieldStrategyPacked(strategyName, pools, weights);
+    }
+
+    function test_EncodeYieldStrategyPacked_CollisionBetweenNameAndPool() public {
+        address pool = makeAddr("pool");
+        uint256 weight = 100;
+
+        string memory nameA = string(bytes.concat(bytes20(pool), bytes32(weight)));
+        address[] memory poolsA = new address[](0);
+        uint256[] memory weightsA = new uint256[](0);
+
+        string memory nameB = "";
+        address[] memory poolsB = new address[](1);
+        poolsB[0] = pool;
+        uint256[] memory weightsB = new uint256[](1);
+        weightsB[0] = weight;
+
+        bytes memory dataA = encoder.encodeYieldStrategyPacked(nameA, poolsA, weightsA);
+        bytes memory dataB = encoder.encodeYieldStrategyPacked(nameB, poolsB, weightsB);
+
+        // VULNERABLE BY DESIGN: different inputs, same bytes, same hash
+        assertNotEq(poolsA.length, poolsB.length);
+        assertEq(dataA, dataB);
+        assertEq(keccak256(dataA), keccak256(dataB));
+    }
+
+    function testFuzz_EncodeYieldStrategyPacked_CollisionForAnyPoolAndWeight(
+        string memory prefix,
+        address pool,
+        uint256 weight
+    ) public {
+        string memory nameA = string(bytes.concat(bytes(prefix), bytes20(pool), bytes32(weight)));
+        address[] memory poolsA = new address[](0);
+        uint256[] memory weightsA = new uint256[](0);
+
+        string memory nameB = prefix;
+        address[] memory poolsB = new address[](1);
+        poolsB[0] = pool;
+        uint256[] memory weightsB = new uint256[](1);
+        weightsB[0] = weight;
+
+        bytes memory dataA = encoder.encodeYieldStrategyPacked(nameA, poolsA, weightsA);
+        bytes memory dataB = encoder.encodeYieldStrategyPacked(nameB, poolsB, weightsB);
+
+        // VULNERABLE BY DESIGN: for any input, pool and weight, two different inputs produce the same bytes and same hash
+        assertNotEq(poolsA.length, poolsB.length);
+        assertEq(dataA, dataB);
+        assertEq(keccak256(dataA), keccak256(dataB));
     }
 
     function test_EncodeCrossChainBridgeData_EncodesFieldsInOrder() public {
