@@ -392,4 +392,50 @@ contract DeFiEncoderTest is Test {
 
         assertEq(txId, keccak256(expected));
     }
+
+    function test_EncodeStopLossOrder_EncodeFieldsInOrder() public {
+        address user = makeAddr("user");
+        address token = makeAddr("token");
+        uint256 amount = 1 ether;
+        uint256 stopPrice = 100;
+        uint256 triggerPrice = 50;
+
+        bytes memory stopLossData = encoder.encodeStopLossOrder(user, token, amount, stopPrice, triggerPrice);
+        bytes memory expected = abi.encodePacked(user, token, amount, stopPrice, triggerPrice, "STOP_LOSS_ORDER");
+
+        assertEq(stopLossData, expected);
+        // 3 uint256 + 2 addresses + len("STOP_LOSS_ORDER")
+        assertEq(stopLossData.length, 3 * WORD_SIZE + 2 * ADDRESS_SIZE + 15);
+    }
+
+    function test_EncodeTakeProfitOrder_EncodeFieldsInOrder() public {
+        address user = makeAddr("user");
+        address token = makeAddr("token");
+        uint256 amount = 1 ether;
+        uint256 takeProfitPrice = 50;
+
+        bytes memory takeProfitData = encoder.encodeTakeProfitOrder(user, token, amount, takeProfitPrice);
+        bytes memory expected = abi.encodePacked(user, token, amount, takeProfitPrice, "TAKE_PROFIT_ORDER");
+
+        assertEq(takeProfitData, expected);
+        // 2 uint256 + 2 addresses + len("TAKE_PROFIT_ORDER")
+        assertEq(takeProfitData.length, 2 * WORD_SIZE + 2 * ADDRESS_SIZE + 17);
+    }
+
+    function test_EncodeTrailingStopOrder_EncodeFieldsInOrder() public {
+        address user = makeAddr("user");
+        address token = makeAddr("token");
+        uint256 amount = 1 ether;
+        uint256 trailingPercent = 10;
+        uint256 activationPrice = 100;
+
+        bytes memory trailingStopData =
+            encoder.encodeTrailingStopOrder(user, token, amount, trailingPercent, activationPrice);
+        bytes memory expected =
+            abi.encodePacked(user, token, amount, trailingPercent, activationPrice, "TRAILING_STOP_ORDER");
+
+        assertEq(trailingStopData, expected);
+        // 3 uint256 + 2 addresses + len("TRAILING_STOP_ORDER")
+        assertEq(trailingStopData.length, 3 * WORD_SIZE + 2 * ADDRESS_SIZE + 19);
+    }
 }
