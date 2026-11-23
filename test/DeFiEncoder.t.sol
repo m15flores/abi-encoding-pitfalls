@@ -48,6 +48,27 @@ contract DeFiEncoderTest is Test {
         assertTrue(idLow != idHigh, "Different fees must yield different ids.");
     }
 
+    function testFuzz_CreatePoolIdentifier_SameIdForBothTokenOrders(address tokenA, address tokenB, uint24 fee) public {
+        bytes32 idAB = encoder.createPoolIdentifier(tokenA, tokenB, fee);
+        bytes32 idBA = encoder.createPoolIdentifier(tokenB, tokenA, fee);
+
+        assertEq(idAB, idBA);
+    }
+
+    function testFuzz_CreatePoolIdentifier_DifferentFeeDifferentId(
+        address tokenA,
+        address tokenB,
+        uint24 fee1,
+        uint24 fee2
+    ) public {
+        vm.assume(fee1 != fee2);
+
+        bytes32 id1 = encoder.createPoolIdentifier(tokenA, tokenB, fee1);
+        bytes32 id2 = encoder.createPoolIdentifier(tokenB, tokenA, fee2);
+
+        assertNotEq(id1, id2);
+    }
+
     function test_EncodeTradingPosition_ReturnsExpectedDataAndHash() public {
         address user = address(0x1234);
         address tokenIn = address(0xA1);
@@ -111,6 +132,25 @@ contract DeFiEncoderTest is Test {
         encoder.encodeSwapData(path, amounts, deadline);
     }
 
+    function testFuzz_EncodeSwapData_LengthIsFixedByArraySize(uint8 arraySize, uint256 seed, uint256 deadline)
+        public
+        view
+    {
+        arraySize = uint8(bound(arraySize, 0, 16));
+
+        address[] memory path = new address[](arraySize);
+        uint256[] memory amounts = new uint256[](arraySize);
+
+        for (uint256 i = 0; i < arraySize; i++) {
+            path[i] = address(bytes20(keccak256(abi.encode(seed, i))));
+            amounts[i] = uint256(keccak256(abi.encode(seed, i)));
+        }
+
+        bytes memory swapData = encoder.encodeSwapData(path, amounts, deadline);
+
+        assertEq(swapData.length, arraySize * (ADDRESS_SIZE + WORD_SIZE) + WORD_SIZE);
+    }
+
     function test_EncodeLimitOrder_EncodesFieldsInOrder() public {
         address maker = makeAddr("maker");
         address taker = makeAddr("taker");
@@ -145,6 +185,26 @@ contract DeFiEncoderTest is Test {
         (bytes32 orderHash2,) = encoder.encodeLimitOrder(maker, taker, tokenIn, tokenOut, amountIn, amountOut, nonce2);
 
         assertNotEq(orderHash1, orderHash2);
+    }
+
+    function testFuzz_EncodeLimitOrder_EncodesFuzzedFields(
+        address maker,
+        address taker,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOut,
+        uint256 nonce
+    ) public {
+        (bytes32 orderHash, bytes memory orderData) =
+            encoder.encodeLimitOrder(maker, taker, tokenIn, tokenOut, amountIn, amountOut, nonce);
+
+        bytes memory expected =
+            abi.encodePacked(maker, taker, tokenIn, tokenOut, amountIn, amountOut, nonce, "LIMIT_ORDER_V1");
+
+        assertEq(orderData, expected);
+        assertEq(orderData.length, 4 * ADDRESS_SIZE + 3 * WORD_SIZE + 14);
+        assertEq(orderHash, keccak256(expected));
     }
 
     function test_EncodeYieldPosition_ReturnsExpectedHash() public {
@@ -202,6 +262,17 @@ contract DeFiEncoderTest is Test {
         assertEq(flashData.length, ADDRESS_SIZE + WORD_SIZE + callbackData.length + 13);
     }
 
+    function testFuzz_EncodeFlashLoan_LengthMatchesCallbackData(bytes memory callbackData) public {
+        address token = makeAddr("token");
+        uint256 amount = 1 ether;
+        bytes memory flashData = encoder.encodeFlashLoan(token, amount, callbackData);
+
+        bytes memory expected = abi.encodePacked(token, amount, callbackData, "FLASH_LOAN_V1");
+
+        assertEq(flashData, expected);
+        assertEq(flashData.length, ADDRESS_SIZE + WORD_SIZE + callbackData.length + 13);
+    }
+
     function test_EncodeStakingPoolConfig_EncodesFieldsInOrder() public {
         address token = makeAddr("token");
         uint256 rewardRate = 10;
@@ -245,6 +316,20 @@ contract DeFiEncoderTest is Test {
         bytes memory second = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
 
         assertNotEq(first, second);
+    }
+
+    function testFuzz_EncodeStakingPoolConfig_EmbedsTimestamp(uint256 timestamp) public {
+        address token = makeAddr("token");
+        uint256 rewardRate = 10;
+        uint256 lockPeriod = 1_000_000;
+        uint256 maxStakers = 5;
+
+        vm.warp(timestamp);
+
+        bytes memory poolConfig = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
+        bytes memory expected = abi.encodePacked(token, rewardRate, lockPeriod, maxStakers, timestamp);
+
+        assertEq(poolConfig, expected);
     }
 
     function test_CreateUserMultiPoolHash_EncodesUserAndPoolIds() public {
