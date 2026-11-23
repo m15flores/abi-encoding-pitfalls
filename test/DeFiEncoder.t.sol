@@ -98,7 +98,7 @@ contract DeFiEncoderTest is Test {
         assertEq(expected, actual, "Swap data encoding missmatch.");
     }
 
-    function test_EncodeSwapData_RevertsOnLengthMissmatch() public {
+    function test_EncodeSwapData_RevertWhen_LengthMismatch() public {
         address[] memory path = new address[](2);
         path[0] = address(0x1);
         path[1] = address(0x2);
@@ -246,5 +246,111 @@ contract DeFiEncoderTest is Test {
         bytes memory second = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
 
         assertNotEq(first, second);
+    }
+
+    function test_CreateUserMultiPoolHash_EncodesUserAndPoolIds() public {
+        address user = makeAddr("user");
+        bytes32[] memory poolIds = new bytes32[](3);
+        poolIds[0] = keccak256("pool1");
+        poolIds[1] = keccak256("pool2");
+        poolIds[2] = keccak256("pool3");
+
+        bytes32 userHash = encoder.createUserMultiPoolHash(user, poolIds);
+
+        bytes memory poolData = abi.encodePacked(user);
+        for (uint256 i = 0; i < poolIds.length; i++) {
+            poolData = abi.encodePacked(poolData, poolIds[i]);
+        }
+        bytes32 expected = keccak256(abi.encodePacked(poolData, "MULTI_POOL_USER"));
+
+        assertEq(userHash, expected);
+    }
+    
+    function test_CreateUserMultiPoolHash_NoPools() public {
+        address user = makeAddr("user");
+        bytes32[] memory poolIds = new bytes32[](0);
+
+        bytes32 userHash = encoder.createUserMultiPoolHash(user, poolIds);
+
+        bytes memory poolData = abi.encodePacked(user);
+        bytes32 expected = keccak256(abi.encodePacked(poolData, "MULTI_POOL_USER"));
+
+        assertEq(userHash, expected);
+    }
+    
+    function test_CreateUserMultiPoolHash_PoolOrderChangesHash() public {
+        address user = makeAddr("user");
+        bytes32[] memory poolIdsFirst = new bytes32[](3);
+        poolIdsFirst[0] = keccak256("pool1");
+        poolIdsFirst[1] = keccak256("pool2");
+        poolIdsFirst[2] = keccak256("pool3");
+
+        // Different Order on the pool
+        bytes32[] memory poolIdsSecond = new bytes32[](3);
+        poolIdsSecond[0] = keccak256("pool3");
+        poolIdsSecond[1] = keccak256("pool1");
+        poolIdsSecond[2] = keccak256("pool2");
+
+        bytes32 userHashFirst = encoder.createUserMultiPoolHash(user, poolIdsFirst);
+        bytes32 userHashSecond = encoder.createUserMultiPoolHash(user, poolIdsSecond);
+
+        assertNotEq(userHashFirst, userHashSecond);
+    }
+
+    function test_EncodeYieldStrategyPacked_EncodesFieldsInOrder() public {
+        string memory strategyName = "name";
+        address[] memory pools = new address[](3);
+        pools[0] = makeAddr("pool0");
+        pools[1] = makeAddr("pool1");
+        pools[2] = makeAddr("pool2");
+        uint256[] memory weights = new uint256[](3);
+        weights[0] = 10;
+        weights[1] = 20;
+        weights[2] = 30;
+
+        bytes memory strategyData = encoder.encodeYieldStrategyPacked(strategyName, pools, weights);
+
+        bytes memory nameData = abi.encodePacked(strategyName);
+
+        bytes memory poolsData;
+        for (uint256 i = 0; i < pools.length; i++) {
+            poolsData = abi.encodePacked(poolsData, pools[i]);
+        }
+
+        bytes memory weightsData;
+        for (uint256 i = 0; i < weights.length; i++) {
+            weightsData = abi.encodePacked(weightsData, weights[i]);
+        }
+
+        bytes memory expected = abi.encodePacked(nameData, poolsData, weightsData, "YIELD_STRATEGY_V1");
+
+        assertEq(strategyData, expected);
+    }
+
+    function test_EncodeYieldStrategyPacked_NoPools() public {
+        string memory strategyName = "name";
+        address[] memory pools = new address[](0);
+        uint256[] memory weights = new uint256[](0);
+
+        bytes memory strategyData = encoder.encodeYieldStrategyPacked(strategyName, pools, weights);
+
+        bytes memory nameData = abi.encodePacked(strategyName);
+        bytes memory poolsData;
+        bytes memory weightsData;
+        bytes memory expected = abi.encodePacked(nameData, poolsData, weightsData, "YIELD_STRATEGY_V1");
+
+        assertEq(strategyData, expected);
+    }
+    
+    function test_EncodeYieldStrategyPacked_RevertWhen_LengthMismatch() public {
+        string memory strategyName = "name";
+        address[] memory pools = new address[](2);
+        pools[0] = makeAddr("pool0");
+        pools[1] = makeAddr("pool1");
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 10;
+
+        vm.expectRevert(DeFiEncoder.InvalidLength.selector);
+        encoder.encodeYieldStrategyPacked(strategyName, pools, weights);
     }
 }
