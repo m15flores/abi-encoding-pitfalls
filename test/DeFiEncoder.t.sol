@@ -10,7 +10,6 @@ import "../src/DeFiEncoder.sol";
  * @notice Comprehensive test targeting 100% coverage for DeFiEncoder
  */
 contract DeFiEncoderTest is Test {
-
     DeFiEncoder encoder;
 
     uint256 private constant ADDRESS_SIZE = 20; // address: 20 bytes in encodePacked
@@ -211,7 +210,7 @@ contract DeFiEncoderTest is Test {
         uint256 timestamp = 1_700_000_000;
 
         vm.warp(timestamp);
-        
+
         bytes memory poolConfig = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
 
         bytes memory expected = abi.encodePacked(token, rewardRate, lockPeriod, maxStakers, timestamp);
@@ -226,13 +225,13 @@ contract DeFiEncoderTest is Test {
         uint256 maxStakers = 5;
 
         vm.warp(1_700_000_000);
-        
+
         bytes memory first = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
         bytes memory second = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
 
         assertEq(first, second);
     }
-    
+
     function test_EncodeStakingPoolConfig_DifferentTimestampDifferentOutput() public {
         address token = makeAddr("token");
         uint256 rewardRate = 10;
@@ -242,7 +241,7 @@ contract DeFiEncoderTest is Test {
         vm.warp(block.timestamp + 100);
         bytes memory first = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
 
-        vm.warp(block.timestamp + 100); 
+        vm.warp(block.timestamp + 100);
         bytes memory second = encoder.encodeStakingPoolConfig(token, rewardRate, lockPeriod, maxStakers);
 
         assertNotEq(first, second);
@@ -265,7 +264,7 @@ contract DeFiEncoderTest is Test {
 
         assertEq(userHash, expected);
     }
-    
+
     function test_CreateUserMultiPoolHash_NoPools() public {
         address user = makeAddr("user");
         bytes32[] memory poolIds = new bytes32[](0);
@@ -277,7 +276,7 @@ contract DeFiEncoderTest is Test {
 
         assertEq(userHash, expected);
     }
-    
+
     function test_CreateUserMultiPoolHash_PoolOrderChangesHash() public {
         address user = makeAddr("user");
         bytes32[] memory poolIdsFirst = new bytes32[](3);
@@ -341,7 +340,7 @@ contract DeFiEncoderTest is Test {
 
         assertEq(strategyData, expected);
     }
-    
+
     function test_EncodeYieldStrategyPacked_RevertWhen_LengthMismatch() public {
         string memory strategyName = "name";
         address[] memory pools = new address[](2);
@@ -352,5 +351,45 @@ contract DeFiEncoderTest is Test {
 
         vm.expectRevert(DeFiEncoder.InvalidLength.selector);
         encoder.encodeYieldStrategyPacked(strategyName, pools, weights);
+    }
+
+    function test_EncodeCrossChainBridgeData_EncodesFieldsInOrder() public {
+        uint256 sourceChain = 100;
+        uint256 targetChain = 200;
+        address token = makeAddr("token");
+        uint256 amount = 1 ether;
+        address recipient = makeAddr("recipient");
+
+        bytes memory bridgeData = encoder.encodeCrossChainBridgeData(sourceChain, targetChain, token, amount, recipient);
+        bytes memory expected =
+            abi.encodePacked(sourceChain, targetChain, token, amount, recipient, "CROSS_CHAIN_BRIDGE");
+
+        assertEq(bridgeData, expected);
+        // 3 uint256 + 2 addresses + len("CROSS_CHAIN_BRIDGE")
+        assertEq(bridgeData.length, 3 * WORD_SIZE + 2 * ADDRESS_SIZE + 18);
+    }
+
+    function test_CreateDeFiTransactionId_ReturnsExpectedHash() public {
+        string memory txType = "demo";
+        address user = makeAddr("user");
+        uint256 timestamp = 1_700_000_000;
+        uint256 nonce = 7;
+
+        bytes32 txId = encoder.createDeFiTransactionId(txType, user, timestamp, nonce);
+        bytes memory expected = abi.encodePacked(txType, user, timestamp, nonce, "DEFI_TX");
+
+        assertEq(txId, keccak256(expected));
+    }
+
+    function test_CreateDeFiTransactionId_EmptyTxType() public {
+        string memory txType = "";
+        address user = makeAddr("user");
+        uint256 timestamp = 1_700_000_000;
+        uint256 nonce = 7;
+
+        bytes32 txId = encoder.createDeFiTransactionId(txType, user, timestamp, nonce);
+        bytes memory expected = abi.encodePacked(txType, user, timestamp, nonce, "DEFI_TX");
+
+        assertEq(txId, keccak256(expected));
     }
 }
